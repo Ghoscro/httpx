@@ -175,7 +175,31 @@ def test_multipart_file_tuple_headers(file_content_type: str | None) -> None:
     )
 
 
-def test_multipart_headers_include_content_type() -> None:
+@pytest.mark.parametrize("file_content_type", [None, "application/json"])
+def test_multipart_content_type_substring_header(file_content_type: str | None) -> None:
+    request = httpx.Request(
+        "POST",
+        "https://www.example.com/",
+        files={
+            "file": (
+                "test.txt",
+                b"<file content>",
+                file_content_type,
+                {"X-Content-Type-Options": "nosniff"},
+            )
+        },
+    )
+    request.read()
+
+    expected_type = file_content_type or "text/plain"
+    assert f"\r\nContent-Type: {expected_type}\r\n".encode() in request.content
+    assert b"\r\nX-Content-Type-Options: nosniff\r\n" in request.content
+
+
+@pytest.mark.parametrize(
+    "header_name", ["Content-Type", "content-type", "CONTENT-TYPE"]
+)
+def test_multipart_headers_include_content_type(header_name: str) -> None:
     """
     Content-Type from 4th tuple parameter (headers) should
     override the 3rd parameter (content_type)
@@ -183,7 +207,7 @@ def test_multipart_headers_include_content_type() -> None:
     file_name = "test.txt"
     file_content = io.BytesIO(b"<file content>")
     file_content_type = "text/plain"
-    file_headers = {"Content-Type": "image/png"}
+    file_headers = {header_name: "image/png"}
 
     url = "https://www.example.com/"
     headers = {"Content-Type": "multipart/form-data; boundary=BOUNDARY"}
@@ -199,7 +223,7 @@ def test_multipart_headers_include_content_type() -> None:
     }
     assert request.content == (
         f'--BOUNDARY\r\nContent-Disposition: form-data; name="file"; '
-        f'filename="{file_name}"\r\nContent-Type: '
+        f'filename="{file_name}"\r\n{header_name}: '
         f"image/png\r\n\r\n<file content>\r\n--BOUNDARY--\r\n"
         "".encode("ascii")
     )
